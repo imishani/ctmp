@@ -1,8 +1,0 @@
-prefix=/usr/local
-
-Name: ctmp
-Description: Description of ctmp
-Version: 0.0.0
-Cflags: -I${prefix}/include
-Libs: -L${prefix}/lib -lctmp /usr/local/lib//libsearch.so
-Requires: manipulation_planning moveit_msgs moveit_ros_planning moveit_ros_planning_interface roscpp rospy std_msgs
