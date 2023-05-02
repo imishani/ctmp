@@ -50,6 +50,12 @@
 
 #include <common/types.hpp>
 
+// ROS includes
+//#include <geometry_msgs/Pose.h>
+// include for tf conversions
+#include <tf/transform_datatypes.h>
+#include <tf_conversions/tf_eigen.h>
+
 
 namespace ims {
     inline void rad2deg(stateType& state) {
@@ -80,6 +86,47 @@ namespace ims {
         // get the distance between the orientations
         distance += 2 * std::acos(std::min(1.0, std::abs(quat1.dot(quat2))));
     }
+
+    inline void convertFromRelativePose(const geometry_msgs::Pose &pose,
+                                        const geometry_msgs::Pose &reference,
+                                        std::vector<double> &result)
+    {
+        tf::Transform tf_pose;
+        tf::poseMsgToTF(pose, tf_pose);
+        // Print rf_pose
+        tf::Quaternion q_pose(tf_pose.getRotation());
+        tf::Vector3 v_pose(tf_pose.getOrigin());
+        ROS_INFO("Pose: %f %f %f %f %f %f %f", v_pose.getX(), v_pose.getY(), v_pose.getZ(), q_pose.getX(), q_pose.getY(), q_pose.getZ(), q_pose.getW());
+
+        tf::Transform tf_reference;
+        tf::poseMsgToTF(reference, tf_reference);
+        // Print rf_reference
+        tf::Quaternion q_reference(tf_reference.getRotation());
+        tf::Vector3 v_reference(tf_reference.getOrigin());
+        ROS_INFO("Reference: %f %f %f %f %f %f %f", v_reference.getX(), v_reference.getY(), v_reference.getZ(),
+                 q_reference.getX(), q_reference.getY(), q_reference.getZ(), q_reference.getW());
+
+        tf::Transform tf_result = tf_pose * tf_reference ;
+        // Print rf_result
+        tf::Quaternion q_result(tf_result.getRotation());
+        tf::Vector3 v_result(tf_result.getOrigin());
+        ROS_INFO("Result: %f %f %f %f %f %f %f", v_result.getX(), v_result.getY(), v_result.getZ(),
+                 q_result.getX(), q_result.getY(), q_result.getZ(), q_result.getW());
+
+        geometry_msgs::Pose result_gp;
+        tf::poseTFToMsg(tf_result, result_gp);
+
+        result.resize(6);
+        result[0] = result_gp.position.x;
+        result[1] = result_gp.position.y;
+        result[2] = result_gp.position.z;
+        // Convert from quaternion to rpy
+        tf::Quaternion q(result_gp.orientation.x, result_gp.orientation.y, result_gp.orientation.z, result_gp.orientation.w);
+        tf::Matrix3x3 m(q);
+
+        m.getRPY(result[3], result[4], result[5]);
+    }
+
 }
 
 

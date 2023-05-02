@@ -42,7 +42,7 @@ bool ZeroTimePlanner::initializePlanner(const std::shared_ptr<ims::ctmpActionSpa
                                         const stateType &goal, bool query_mode,
                                         std::string planner_type) {
     m_task_space = actionSpacePtr;
-    arm_name = "manipulator_1";
+    arm_name = m_task_space->getPlanningGroupName();
     m_start_state = start;
     m_goal = goal;
     m_query_mode = query_mode;
@@ -54,11 +54,13 @@ bool ZeroTimePlanner::initializePlanner(const std::shared_ptr<ims::ctmpActionSpa
                                           start, goal);
     }
     catch (std::exception &e) {
+        ROS_ERROR("Failed to initialize planner zero");
         return false;
     }
     std::string current_dir = ros::package::getPath("ctmp");
     read_write_dir = current_dir + "/data/";
     bool m_pick;
+    m_nh = ros::NodeHandle("~");
     m_nh.param("pick", m_pick, false);
     if (m_pick){
         // get current directory
@@ -67,7 +69,7 @@ bool ZeroTimePlanner::initializePlanner(const std::shared_ptr<ims::ctmpActionSpa
     else {
         read_write_path = read_write_dir + arm_name + "_place.dat";
     }
-
+    ROS_INFO("Read write path: %s", read_write_path.c_str());
     if (m_regions.empty()) {
         ReadRegions();
         m_task_space->PassRegions(&m_regions, &m_iregions);
@@ -208,6 +210,7 @@ void ZeroTimePlanner::GraspQuery(std::vector<stateType> &path, std::string grasp
     if (grasp_dir.empty()){
         grasp_dir = read_write_dir;
     }
+    ROS_INFO("Grasp dir: %s", grasp_dir.c_str());
     boost::filesystem::path dir(grasp_dir);
     // Loop over all files in directory
     boost::filesystem::directory_iterator end_itr;

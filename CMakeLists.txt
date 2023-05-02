@@ -13,10 +13,12 @@ find_package(catkin REQUIRED
          roscpp
          rospy
          std_msgs
+         geometry_msgs
          moveit_ros_planning
          moveit_ros_planning_interface
          eigen_conversions
          manipulation_planning
+         actionlib_msgs
 )
 
 
@@ -70,17 +72,19 @@ find_package(Boost REQUIRED COMPONENTS filesystem serialization)
 # )
 
 ## Generate actions in the 'action' folder
-# add_action_files(
-#   FILES
-#   Action1.action
-#   Action2.action
-# )
+ add_action_files(
+   FILES
+   ctmp.action
+ )
 
 ## Generate added messages and services with any dependencies listed here
-# generate_messages(
-#   DEPENDENCIES
-#   moveit_msgs#   std_msgs
-# )
+ generate_messages(
+   DEPENDENCIES
+#         moveit_msgs
+         geometry_msgs
+         std_msgs
+         actionlib_msgs
+ )
 
 ################################################
 ## Declare ROS dynamic reconfigure parameters ##
@@ -125,6 +129,8 @@ catkin_package(
         moveit_ros_planning_interface
         roscpp rospy
         std_msgs
+        geometry_msgs
+        actionlib_msgs
 #  DEPENDS system_lib
 )
 
@@ -156,7 +162,6 @@ target_link_libraries(${PROJECT_NAME}_ctmp
         ${Boost_LIBRARIES}
         )
 
-
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
 ## either from message generation or dynamic reconfigure
@@ -167,6 +172,19 @@ target_link_libraries(${PROJECT_NAME}_ctmp
 ## The recommended prefix ensures that target names across packages don't collide
 add_executable(${PROJECT_NAME}_node src/ctmp_node.cpp
                                     src/zero_time_planner.cpp
+                                    src/planner_zero.cpp)
+
+add_executable(${PROJECT_NAME}_arm_node_service src/arm_ctmp_node_service.cpp
+        src/zero_time_planner.cpp
+        src/planner_zero.cpp)
+
+add_executable(${PROJECT_NAME}_node_client src/ctmp_node_client.cpp
+        src/zero_time_planner.cpp
+        src/planner_zero.cpp)
+
+add_executable(${PROJECT_NAME}_demo
+        src/demo.cpp
+        src/zero_time_planner.cpp
         src/planner_zero.cpp)
 
 
@@ -191,6 +209,26 @@ target_link_libraries(${PROJECT_NAME}_node
     ${Boost_LIBRARIES}
     /usr/local/lib/${search_LIBRARIES}
  )
+target_link_libraries(${PROJECT_NAME}_arm_node_service
+   ${catkin_LIBRARIES}
+   ${eigen_LIBRARIES}
+    ${Boost_LIBRARIES}
+    /usr/local/lib/${search_LIBRARIES}
+ )
+
+target_link_libraries(${PROJECT_NAME}_node_client
+        ${catkin_LIBRARIES}
+        ${eigen_LIBRARIES}
+        ${Boost_LIBRARIES}
+        /usr/local/lib/${search_LIBRARIES}
+        )
+
+target_link_libraries(${PROJECT_NAME}_demo
+        ${catkin_LIBRARIES}
+        ${eigen_LIBRARIES}
+        ${Boost_LIBRARIES}
+        /usr/local/lib/${search_LIBRARIES}
+        )
 
 
 #############

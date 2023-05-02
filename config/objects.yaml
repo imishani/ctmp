@@ -1,0 +1,81 @@
+part_c1_1:
+  name: "part_c1_1"
+  relative_pose:  # From robot tool0 to part
+    position:
+      x: 0.0
+      y: 0.22
+      z: 0.0
+    orientation:
+      x: -0.5
+      y: 0.5
+      z: 0.5
+      w: 0.5
+
+part_c1_2:
+  name: "part_c1_2"
+  relative_pose: # From robot tool0 to part
+    position:
+      x: 0.0
+      y: 0.22
+      z: 0.0
+    orientation:
+#      x: -0.5
+#      y: 0.5
+#      z: 0.5
+#      w: 0.5
+      x: -0.7071068
+      y: 0.0
+      z: 0.0
+      w: 0.7071068
+
+part_c1_3:
+  name: "part_c1_3"
+  relative_pose:  # From robot tool0 to part
+    position:
+      x: 0.0
+      y: 0.22
+      z: 0.0
+    orientation:
+      x: -0.5
+      y: 0.5
+      z: 0.5
+      w: 0.5
+
+part_c2:
+  name: "part_c2"
+  relative_pose:  # From robot tool0 to part
+    position:
+      x: 0.0
+      y: 0.22
+      z: 0.0
+    orientation:
+      x: -0.5
+      y: 0.5
+      z: 0.5
+      w: 0.5
+
+part_c3:
+  name: "part_c5"
+  relative_pose:  # From robot tool0 to part
+    position:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    orientation:       # 180 degree rotation about the x-axis
+      x: -0.5
+      y: 0.5
+      z: 0.5
+      w: 0.5
+
+left_side_panel:
+  name: "left_side_panel"
+  relative_pose:  # From robot tool0 to part
+    position:
+      x: 0.0
+      y: 0.0
+      z: -0.05
+    orientation:       # 180 degree rotation about the x-axis
+      x: -0.7071068
+      y: -0.7071068
+      z: 0.0
+      w: 0.0

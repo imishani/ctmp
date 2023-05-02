@@ -81,10 +81,19 @@ namespace ims{
         ctmpActionSpace(const MoveitInterface& env,
                         const ctmpActionType& actions_ptr) :
                 ManipulationActionSpace(env, actions_ptr) {
+            m_pnh = ros::NodeHandle(env.mGroupName);
             readGoalRegions();
-            m_pnh = ros::NodeHandle("~");
+            // print m_pnh namespace
+            std::cout << "m_pnh namespace: " << m_pnh.getNamespace() << std::endl;
             m_vis_pub = m_nh.advertise<visualization_msgs::Marker>( "visualization_marker", 0 );
         }
+
+        /// @brief Get the planning group name
+        /// @return The planning group name as a string
+        std::string getPlanningGroupName() const {
+            return mMoveitInterface->mGroupName;
+        }
+
 
         /// @brief Reading goal regions from the parameter server as defined by the user
         /// @return True if the goal regions were read successfully, false otherwise
@@ -92,16 +101,16 @@ namespace ims{
             std::string region_type;
 
             bool pick;
-            m_nh.param("pick", pick, false);
+            m_pnh.param("pick", pick, false);
             if (pick){
                 region_type = "pick";
             }
             else{
                 region_type = "place";
             }
-
+            std::cout << "region_type: " << region_type << std::endl;
             XmlRpc::XmlRpcValue xlist;
-            if (!m_nh.getParam("regions/" + region_type + "_region/min_limits", xlist)) {
+            if (!m_pnh.getParam("regions/" + region_type + "_region/min_limits", xlist)) {
                 ROS_WARN("Could not find start region min limits");
                 return false;
             }
@@ -115,7 +124,7 @@ namespace ims{
                 m_min_ws_limits.push_back(xlist[(int)i]);
             }
 
-            if (!m_nh.getParam("regions/" + region_type + "_region/max_limits", xlist)) {
+            if (!m_pnh.getParam("regions/" + region_type + "_region/max_limits", xlist)) {
                 ROS_WARN("Could not find start region max limits");
                 return false;
             }
@@ -241,11 +250,17 @@ namespace ims{
                     from_euler_zyx(state_val[5], state_val[4], state_val[3], q);
                     pose.orientation.x = q.x(); pose.orientation.y = q.y();
                     pose.orientation.z = q.z(); pose.orientation.w = q.w();
-                    bool succ = mMoveitInterface->calculateIK(pose, joint_state);
+                    bool succ = mMoveitInterface->calculateIK(pose,joint_state);
                     if (!succ) {
+                        ROS_INFO("IK failed");
                         return false;
                     }
                     else {
+                        // print the joint state
+//                        ROS_INFO("Joins state size: %zu, IK solution: %f %f %f %f %f %f",
+//                                 joint_state.size(), joint_state[0]*180/M_PI, joint_state[1]*180/M_PI,
+//                                 joint_state[2]*180/M_PI, joint_state[3]*180/M_PI,
+//                                 joint_state[4]*180/M_PI, joint_state[5]*180/M_PI);
                         return mMoveitInterface->isStateValid(joint_state);
                     }
             }

@@ -39,26 +39,51 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
 
 
-int ims::state::id_counter = 0;
-
 
 int main(int argc, char** argv) {
 
     ros::init(argc, argv, "ctmp_test");
     ros::NodeHandle nh;
+    ros::NodeHandle pnh("~");
     ros::AsyncSpinner spinner(1);
     spinner.start();
 
     // Before I will load it with launch file, lets set params to ROS server of the limits of the goal region:
-    ros::param::set("pick", true);
-    ros::param::set("regions/pick_region/min_limits", std::vector<double>{0.7, -0.4, 1.0, 0, 0, 0.0});
-    ros::param::set("regions/pick_region/max_limits", std::vector<double>{1.3, 0.5, 1.0, 0, 0, 0.0});
+//    ros::param::set("/ctmp_test/pick", false);
+//    ros::param::set("/ctmp_test/regions/pick_region/min_limits",
+//                    std::vector<double>{-0.5, 0.4, 0.9, 0, 0, 0.0});
+//    ros::param::set("/ctmp_test/regions/pick_region/max_limits",
+//                    std::vector<double>{0.4, 0.9, 0.9, 0, 0, 0.0});
+//    ros::param::set("/ctmp_test/regions/place_region/min_limits",
+//                    std::vector<double>{0.7, -0.25, 0.75, 0, 0, 0});
+//    ros::param::set("/ctmp_test/regions/place_region/max_limits",
+//                    std::vector<double>{1.2, 0.25, 0.75, 0, 0, 0});
+
+    ros::param::set("/manipulator_2/pick", true);
+    ros::param::set("/manipulator_2/regions/pick_region/min_limits",
+                    std::vector<double>{1.60, -1.24, 0.75 , 0.0, 0.0, 0.0});
+    ros::param::set("/manipulator_2/regions/pick_region/max_limits",
+                    std::vector<double>{2.0, -0.74, 0.75, 0.0, 0.0, 0.0});
+    ros::param::set("/manipulator_2/regions/place_region/min_limits",
+                    std::vector<double>{0.7, -0.25, 0.7, 0.0, 0.0, 1.570796});
+    ros::param::set("/manipulator_2/regions/place_region/max_limits",
+                    std::vector<double>{1.2, 0.25, 0.7, 0.0, 0.0, 1.570796});
+
+//    ros::param::set("/ctmp_test/pick", true);
+//    ros::param::set("/ctmp_test/regions/pick_region/min_limits",
+//                    std::vector<double>{1.60, 0.74, 0.80 , 0.0, 0.0, 0.0});
+//    ros::param::set("/ctmp_test/regions/pick_region/max_limits",
+//                    std::vector<double>{1.90, 1.24, 0.80, 0.0, 0.0, 0.0});
+//    ros::param::set("/ctmp_test/regions/place_region/min_limits",
+//                    std::vector<double>{0.7, -0.25, 0.74, 0.0, 0.0, -1.570796});
+//    ros::param::set("/ctmp_test/regions/place_region/max_limits",
+//                    std::vector<double>{1.2, 0.25, 0.74, 0.0, 0.0, -1.570796});
     // get manipulation_planning package path
     auto full_path = ros::package::getPath("manipulation_planning");
     std::string path_mprim = full_path + "/config/ws.mprim";
 
     // Define Robot inteface to give commands and get info from moveit:
-    moveit::planning_interface::MoveGroupInterface move_group("manipulator_1");
+    moveit::planning_interface::MoveGroupInterface move_group("manipulator_2");
 
     moveit::core::RobotStatePtr current_state = move_group.getCurrentState();
 
@@ -67,7 +92,7 @@ int main(int argc, char** argv) {
     auto* heuristic = new ims::SE3HeuristicRPY;
     ims::BestFirstSearchParams params(heuristic);
 
-    ims::MoveitInterface scene_interface ("manipulator_1");
+    ims::MoveitInterface scene_interface ("manipulator_2");
     ims::ctmpActionType action_type(path_mprim);
 
     stateType discretization {0.02, 0.02, 0.02,
@@ -83,7 +108,7 @@ int main(int argc, char** argv) {
     stateType start_state {0, 0, 0, 0, 0, 0};
     // get the current end effector pose
     // go to "ready" pose first
-    move_group.setNamedTarget("ready1");
+    move_group.setNamedTarget("ready2");
     move_group.move();
     ros::Duration(1).sleep();
 
@@ -100,8 +125,8 @@ int main(int argc, char** argv) {
     ims::get_euler_zyx(current_pose_eigen, start_state[5], start_state[4], start_state[3]);
     ims::normalize_euler_zyx(start_state[5], start_state[4], start_state[3]);
 
-    stateType goal_state{0.8, 0.59, 1.0, 0, 0, 0.};
-
+//    stateType goal_state = {0.2, 0.5, 0.9, -0, 0, 0};
+    stateType goal_state = {0.8, -0.1, 0.75, 0, 0, 0};
     // discrtize the goal state
     for (int i = 0; i < 6; i++) {
         goal_state[i] = std::round(goal_state[i] / discretization[i]) * discretization[i];

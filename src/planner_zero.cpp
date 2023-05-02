@@ -51,15 +51,16 @@ void ims::plannerZero::initializePlanner(const std::shared_ptr<ctmpActionSpace> 
     stateType joint_state_start;
     m_actionSpacePtr->getJointStates(joint_state_start);
     if (!m_actionSpacePtr->isStateValid(start, joint_state_start)){
+        ROS_ERROR("Start state is not valid");
         throw std::runtime_error("Start state is not valid");
     }
     // check if goal is valid
-    stateType joint_state_goal;
-    m_actionSpacePtr->getJointStates(joint_state_goal);
+    stateType joint_state_goal = joint_state_start;
+//    m_actionSpacePtr->getJointStates(joint_state_goal);
     if (!m_actionSpacePtr->isStateValid(goal, joint_state_goal)){
-        throw std::runtime_error("Goal state is not valid");
+        ROS_ERROR("Goal state is not valid");
+//        throw std::runtime_error("Goal state is not valid");
     }
-    state::resetIdCounter();
     int m_start_ind = m_actionSpacePtr->getOrCreateState(start);
     printf("start ind: %d \n", m_start_ind);
     m_start = m_actionSpacePtr->getState(m_start_ind);
@@ -67,7 +68,7 @@ void ims::plannerZero::initializePlanner(const std::shared_ptr<ctmpActionSpace> 
     m_start->setParent(START);
     int m_goal_ind = m_actionSpacePtr->getOrCreateState(goal);
     m_goal = m_actionSpacePtr->getState(m_goal_ind);
-    m_goal->setMappedState(joint_state_goal);
+//    m_goal->setMappedState(joint_state_goal);
     m_goal->setParent(GOAL);
     m_heuristic->setGoal(m_goal);
     // Evaluate the start state
