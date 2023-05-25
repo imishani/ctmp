@@ -49,41 +49,42 @@ int main(int argc, char** argv) {
     spinner.start();
 
     // Before I will load it with launch file, lets set params to ROS server of the limits of the goal region:
-//    ros::param::set("/ctmp_test/pick", false);
-//    ros::param::set("/ctmp_test/regions/pick_region/min_limits",
-//                    std::vector<double>{-0.5, 0.4, 0.9, 0, 0, 0.0});
-//    ros::param::set("/ctmp_test/regions/pick_region/max_limits",
-//                    std::vector<double>{0.4, 0.9, 0.9, 0, 0, 0.0});
-//    ros::param::set("/ctmp_test/regions/place_region/min_limits",
-//                    std::vector<double>{0.7, -0.25, 0.75, 0, 0, 0});
-//    ros::param::set("/ctmp_test/regions/place_region/max_limits",
-//                    std::vector<double>{1.2, 0.25, 0.75, 0, 0, 0});
+    ros::param::set("/manipulator_1/pick", false);
+    ros::param::set("/manipulator_1/regions/pick_region/min_limits",
+                    std::vector<double>{-0.5, -0.4, 0.95, 0, 0, 0.0});
+    ros::param::set("/manipulator_1/regions/pick_region/max_limits",
+                    std::vector<double>{0.4, 0.9, 0.95, 0, 0, 0.0});
+    ros::param::set("/manipulator_1/regions/place_region/min_limits",
+                    std::vector<double>{0.7, -0.25, 0.86, 0, 0, 0});
+    ros::param::set("/manipulator_1/regions/place_region/max_limits",
+                    std::vector<double>{1.2, 0.25, 0.86, 0, 0, 0});
 
     ros::param::set("/manipulator_2/pick", true);
+    ros::param::set("/ctmp_test/pick", true);
     ros::param::set("/manipulator_2/regions/pick_region/min_limits",
-                    std::vector<double>{1.60, -1.24, 0.75 , 0.0, 0.0, 0.0});
+                    std::vector<double>{1.60, -1.24, 0.74 , 0.0, 0.0, 0.0});
     ros::param::set("/manipulator_2/regions/pick_region/max_limits",
-                    std::vector<double>{2.0, -0.74, 0.75, 0.0, 0.0, 0.0});
+                    std::vector<double>{2.0, -0.74, 0.74, 0.0, 0.0, 0.0});
     ros::param::set("/manipulator_2/regions/place_region/min_limits",
-                    std::vector<double>{0.7, -0.25, 0.7, 0.0, 0.0, 1.570796});
+                    std::vector<double>{0.7, -0.25, 0.7, 0.0, 0.0, 1.5708});
     ros::param::set("/manipulator_2/regions/place_region/max_limits",
-                    std::vector<double>{1.2, 0.25, 0.7, 0.0, 0.0, 1.570796});
+                    std::vector<double>{1.2, 0.20, 0.7, 0.0, 0.0, 1.5708});
 
-//    ros::param::set("/ctmp_test/pick", true);
-//    ros::param::set("/ctmp_test/regions/pick_region/min_limits",
-//                    std::vector<double>{1.60, 0.74, 0.80 , 0.0, 0.0, 0.0});
-//    ros::param::set("/ctmp_test/regions/pick_region/max_limits",
-//                    std::vector<double>{1.90, 1.24, 0.80, 0.0, 0.0, 0.0});
-//    ros::param::set("/ctmp_test/regions/place_region/min_limits",
-//                    std::vector<double>{0.7, -0.25, 0.74, 0.0, 0.0, -1.570796});
-//    ros::param::set("/ctmp_test/regions/place_region/max_limits",
-//                    std::vector<double>{1.2, 0.25, 0.74, 0.0, 0.0, -1.570796});
+    ros::param::set("/manipulator_3/pick", false);
+    ros::param::set("/manipulator_3/regions/pick_region/min_limits",
+                    std::vector<double>{1.60, 0.74, 0.76 , 0.0, 0.0, 0.0});
+    ros::param::set("/manipulator_3/regions/pick_region/max_limits",
+                    std::vector<double>{2.0, 1.24, 0.76, 0.0, 0.0, 0.0});
+    ros::param::set("/manipulator_3/regions/place_region/min_limits",
+                    std::vector<double>{0.7, -0.25, 0.76, 0.0, 0.0, -1.5708});
+    ros::param::set("/manipulator_3/regions/place_region/max_limits",
+                    std::vector<double>{1.2, 0.25, 0.76, 0.0, 0.0, -1.5708});
     // get manipulation_planning package path
     auto full_path = ros::package::getPath("manipulation_planning");
     std::string path_mprim = full_path + "/config/ws.mprim";
 
-    // Define Robot inteface to give commands and get info from moveit:
-    moveit::planning_interface::MoveGroupInterface move_group("manipulator_2");
+    // Define Robot interface to give commands and get info from moveit:
+    moveit::planning_interface::MoveGroupInterface move_group("manipulator_1");
 
     moveit::core::RobotStatePtr current_state = move_group.getCurrentState();
 
@@ -92,7 +93,7 @@ int main(int argc, char** argv) {
     auto* heuristic = new ims::SE3HeuristicRPY;
     ims::BestFirstSearchParams params(heuristic);
 
-    ims::MoveitInterface scene_interface ("manipulator_2");
+    ims::MoveitInterface scene_interface ("manipulator_1");
     ims::ctmpActionType action_type(path_mprim);
 
     stateType discretization {0.02, 0.02, 0.02,
@@ -102,13 +103,14 @@ int main(int argc, char** argv) {
     action_type.Discretization(discretization);
     action_type.setSpaceType(ims::manipulationType::spaceType::WorkSpace); // Already the default
 
-    std::shared_ptr<ims::ctmpActionSpace> action_space = std::make_shared<ims::ctmpActionSpace>(scene_interface, action_type);
+    std::shared_ptr<ims::ctmpActionSpace> action_space = std::make_shared<ims::ctmpActionSpace>(scene_interface,
+                                                                                                action_type);
 
 
     stateType start_state {0, 0, 0, 0, 0, 0};
     // get the current end effector pose
     // go to "ready" pose first
-    move_group.setNamedTarget("ready2");
+    move_group.setNamedTarget("ready1");
     move_group.move();
     ros::Duration(1).sleep();
 
@@ -125,8 +127,8 @@ int main(int argc, char** argv) {
     ims::get_euler_zyx(current_pose_eigen, start_state[5], start_state[4], start_state[3]);
     ims::normalize_euler_zyx(start_state[5], start_state[4], start_state[3]);
 
-//    stateType goal_state = {0.2, 0.5, 0.9, -0, 0, 0};
-    stateType goal_state = {0.8, -0.1, 0.75, 0, 0, 0};
+    stateType goal_state = {0.2, 0.5, 0.95, 0, 0, 0};
+//    stateType goal_state = {0.8, -0.1, 0.75, 0, 0, 0};
     // discrtize the goal state
     for (int i = 0; i < 6; i++) {
         goal_state[i] = std::round(goal_state[i] / discretization[i]) * discretization[i];

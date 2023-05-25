@@ -47,7 +47,7 @@ int main(int argc, char **argv){
 //    ros::param::set("/manipulator_1/regions/place_region/max_limits", std::vector<double>{1.2, 0.25, 0.75, 0, 0, 0});
     // create the action client
     // true causes the client to spin its own thread
-    actionlib::SimpleActionClient<ctmp::ctmpAction> ac("manipulator_1", true);
+    actionlib::SimpleActionClient<ctmp::ctmpAction> ac("manipulator_1/ctmp_action", true);
 
     ROS_INFO("Waiting for action server to start.");
     // wait for the action server to start
@@ -56,6 +56,7 @@ int main(int argc, char **argv){
     ROS_INFO("Action server started, sending goal.");
     // send a goal to the action
     ctmp::ctmpGoal goal;
+    goal.robot_name = "manipulator_1";
     goal.pick_object_name = "part_c1_2";
     geometry_msgs::Pose place_pose;
     place_pose.position.x = 0.8; place_pose.position.y = 0.0; place_pose.position.z = 0.75;

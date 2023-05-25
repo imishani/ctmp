@@ -47,36 +47,33 @@ protected:
 
     ros::NodeHandle nh_;
     ros::NodeHandle pnh_;
-    actionlib::SimpleActionServer<ctmp::ctmpAction> as_; // NodeHandle instance must be created before this line.
+    std::vector<std::shared_ptr<actionlib::SimpleActionServer<ctmp::ctmpAction>>> as_; // NodeHandle instance must be created before this line.
                                                         // Otherwise strange error occurs.
-    std::string action_name_;
     // create messages that are used to published feedback/result
     ctmp::ctmpActionFeedback feedback_;
     ctmp::ctmpResult result_;
-    moveit::planning_interface::MoveGroupInterface move_group;
+    std::vector<moveit::planning_interface::MoveGroupInterfacePtr> move_groups;
     stateType discretization {};
-
-    ims::MoveitInterface scene_interface;
+    std::vector<std::string> robot_names;
+    std::vector<std::shared_ptr<ims::MoveitInterface>> scene_interfaces;
     ims::ctmpActionType action_type;
+    std::vector<std::shared_ptr<ims::ctmpActionSpace>> action_spaces;
 
 public:
 
-    ctmpActionServer(const std::string& robot_name,
+    ctmpActionServer(const std::vector<std::string>& robot_names,
                      ros::NodeHandle& nh,
                      ros::NodeHandle& pnh
                      ) :
             nh_(nh),
             pnh_(pnh),
-            as_(nh_, robot_name, boost::bind(&ctmpActionServer::executeCB, this, _1), false),
-            action_name_(robot_name),
-            move_group(robot_name),
-            scene_interface(robot_name)
+            robot_names(robot_names)
     {
+
         // get manipulation_planning package path
         auto full_path = ros::package::getPath("manipulation_planning");
         std::string path_mprim = full_path + "/config/ws.mprim";
 
-        moveit::core::RobotStatePtr current_state = move_group.getCurrentState();
         action_type = ims::ctmpActionType(path_mprim);
 
         discretization = {0.02, 0.02, 0.02,
@@ -86,10 +83,20 @@ public:
 
         // go to "ready" pose first
         // get the last char as string from the robot name
-        move_group.setNamedTarget("ready" + robot_name.substr(robot_name.size() - 1));
-        move_group.move();
-        ros::Duration(0.1).sleep();
-        as_.start();
+        for (auto& robot_name : robot_names) {
+            // register the goal and feeback callbacks
+            as_.emplace_back(std::make_shared<actionlib::SimpleActionServer<ctmp::ctmpAction>>(nh_,
+                    robot_name + "/ctmp_action",
+                    boost::bind(&ctmpActionServer::executeCB, this, _1), false));
+            move_groups.emplace_back(std::make_shared<moveit::planning_interface::MoveGroupInterface>(robot_name));
+            scene_interfaces.emplace_back(std::make_shared<ims::MoveitInterface>(robot_name));
+            action_spaces.emplace_back(std::make_shared<ims::ctmpActionSpace>(*scene_interfaces.back(), action_type));
+            move_groups.back()->setNamedTarget("ready" + robot_name.substr(robot_name.size() - 1));
+            move_groups.back()->move();
+            ros::Duration(0.1).sleep();
+            as_.back()->start();
+        }
+//        as_.start();
     }
 
     ~ctmpActionServer() = default;
@@ -149,27 +156,42 @@ public:
     {
         // helper variables
         bool success = true;
-        ros::param::set(action_name_ + "/pick", true);
-        std::shared_ptr<ims::ctmpActionSpace> action_space = std::make_shared<ims::ctmpActionSpace>(scene_interface,
-                                                                                                    action_type);
+        // get the robot name
+        std::string robot = goal->robot_name;
+        // look for the index of the robot in the robot_names vector
+        auto it = std::find(robot_names.begin(), robot_names.end(), robot);
+        if (it == robot_names.end()) {
+            ROS_ERROR_STREAM("Robot name not found");
+            success = false;
+            return;
+        }
+        auto robot_idx = std::distance(robot_names.begin(), it);
+        // get the move_group and scene_interface
+        auto& as = as_[robot_idx];
+        auto& move_group = move_groups[robot_idx];
+        auto& scene_interface = scene_interfaces[robot_idx];
+        auto& action_space = action_spaces[robot_idx];
+
+
+        ros::param::set(robot + "/pick", true);
+
         ROS_INFO("Initiated action space");
         std::vector<double> pick_pose; // x, y, z, r, p ,y
         if (!getObjPose(goal->pick_object_name, pick_pose)) {
             ROS_ERROR_STREAM("Failed to get the pose of the pick object");
             success = false;
-            as_.setAborted();
+            as->setAborted();
             return;
         }
 
         stateType start_state {0, 0, 0, 0, 0, 0};
         ROS_INFO("Getting current pose");
-        geometry_msgs::PoseStamped current_pose = move_group.getCurrentPose();  // "arm_1tool0"
+        geometry_msgs::PoseStamped current_pose = move_group->getCurrentPose();  // "arm_1tool0"
 
         start_state[0] = current_pose.pose.position.x;
         start_state[1] = current_pose.pose.position.y;
         start_state[2] = current_pose.pose.position.z;
 
-        // If using hopf coordinates:
         Eigen::Quaterniond current_pose_eigen;
         tf::quaternionMsgToEigen(current_pose.pose.orientation, current_pose_eigen);
 
@@ -197,14 +219,16 @@ public:
                   << current_pose.pose.orientation.x << " " << current_pose.pose.orientation.y << " " << current_pose.pose.orientation.z << " " << current_pose.pose.orientation.w << std::endl;
 
         // check if the inverse kinematics solution exists for the current pose and check if the solution is equal to the current joint state
-        std::vector<double> current_joint_state = move_group.getCurrentJointValues();
+        std::vector<double> current_joint_state = move_group->getCurrentJointValues();
         std::vector<double> ik_solution;
 
-        if (!scene_interface.calculateIK(current_pose.pose, current_joint_state, ik_solution)) {
+        if (!scene_interface->calculateIK(current_pose.pose, current_joint_state, ik_solution)) {
             std::cout << "No IK solution for the current pose" << std::endl;
             // failure
             success = false;
-            as_.setAborted(result_);
+            result_.success = success;
+            as->setSucceeded(result_);
+            return;
         }
         else {
             ims::rad2deg(ik_solution); ims::rad2deg(current_joint_state);
@@ -231,7 +255,9 @@ public:
             std::cout << "Planner initialization failed" << std::endl;
             // failure
             success = false;
-            as_.setAborted(result_);
+            result_.success = success;
+            as->setSucceeded(result_);
+            return;
         }
 
         std::vector<stateType> path_;
@@ -242,7 +268,9 @@ public:
                 std::cout << "\n" <<"Finished Preprocessing" << std::endl;
             // failure
             success = false;
-            as_.setAborted(result_);
+            result_.success = success;
+            as->setSucceeded(result_);
+            return;
         }
         else {
             std::cout << "Path found" << std::endl;
@@ -265,7 +293,7 @@ public:
         ROS_INFO("goal state %f %f %f %f %f %f", goal_state[0], goal_state[1], goal_state[2], goal_state[3], goal_state[4], goal_state[5]);
 
         // check IK
-        if (scene_interface.calculateIK(place_pose, ik_solution)) {
+        if (scene_interface->calculateIK(place_pose, ik_solution)) {
             std::cout << "IK solution for the place pose" << std::endl;
             for (int i = 0; i < ik_solution.size(); i++) {
                 std::cout << "joint " << i << " " << ik_solution[i]*180/M_PI << " " << current_joint_state[i] << std::endl;
@@ -275,12 +303,11 @@ public:
             std::cout << "No IK solution for the place pose" << std::endl;
             // failure
             success = false;
-            as_.setAborted(result_);
+            as->setAborted();
         }
 
-        ros::param::set(action_name_ + "/pick", false);
-        action_space = std::make_shared<ims::ctmpActionSpace>(scene_interface,
-                                                              action_type);
+        ros::param::set(robot + "/pick", false);
+        action_space->readGoalRegions();
 
         ZeroTimePlanner planner2;
         if (!planner2.initializePlanner(action_space, params,
@@ -289,8 +316,9 @@ public:
             //raise error
             std::cout << "Planner initialization failed" << std::endl;
             // failure
-            success = false;
-            as_.setAborted(result_);
+            result_.success = false;
+            as->setSucceeded(result_);
+            return;
         }
 
         std::vector<stateType> path_2;
@@ -301,7 +329,10 @@ public:
                 std::cout << "\n" <<"Finished Preprocessing" << std::endl;
             // failure
             success = false;
-            as_.setAborted(result_);
+            // just send failure, dont crash
+            result_.success = false;
+            as->setSucceeded(result_);
+            return;
         }
         else {
             std::cout << "Path found" << std::endl;
@@ -309,25 +340,82 @@ public:
 
         std::vector<stateType> path;
         path.insert(path.end(), path_.begin(), path_.end());
-        std::reverse(path_.begin(), path_.end());
-        path.insert(path.end(), path_.begin(), path_.end());
 
-
-
-        // profile and execute the path
-        // @{
-        // execute in the joint space
         moveit_msgs::RobotTrajectory trajectory;
         ims::profileTrajectory(path.at(0),
                                path.back(),
                                path,
-                               move_group,
+                               *move_group,
                                trajectory);
 
-        move_group.execute(trajectory);
+        move_group->execute(trajectory);
+
+        // go down and grasp the object
+        // get the current pose of the end effector
+        geometry_msgs::PoseStamped curr_pose = move_group->getCurrentPose();
+        geometry_msgs::Pose grasp_pose = curr_pose.pose;
+        // if manipulator_1, increment z by 0.2 else increment by 0.02
+        if (robot == "manipulator_1") {
+            grasp_pose.position.z -= 0.16;
+            move_group->setPoseTarget(grasp_pose);
+            move_group->move();
+        }
+        else if (robot == "manipulator_3") {
+            // close the gripper using gripper_3 group
+            // define the move group
+            moveit::planning_interface::MoveGroupInterface gripper_3("gripper_3");
+//            gripper_3.setNamedTarget("closed_3");
+            gripper_3.setJointValueTarget("arm_3robotiq_85_left_knuckle_joint", 0.6);
+            // increase the speed
+            gripper_3.setMaxVelocityScalingFactor(0.8);
+            gripper_3.move();
+            ros::Duration(0.1).sleep();
+        }
+
+        // attach the object
+        move_group->attachObject(goal->pick_object_name);
+        ros::Duration(0.1).sleep();
+
+        // go up
+        if (robot == "manipulator_1")
+        {
+            move_group->setPoseTarget(curr_pose.pose);
+            move_group->move();
+        }
+
+        // go to the place pose
+        path.clear();
+        std::reverse(path_.begin(), path_.end());
+        path.insert(path.end(), path_.begin(), path_.end());
+        path.insert(path.end(), path_2.begin(), path_2.end());
+        // profile and execute the path
+        // @{
+        // execute in the joint space
+
+        trajectory.joint_trajectory.points.clear();
+        ims::profileTrajectory(path.at(0),
+                               path.back(),
+                               path,
+                               *move_group,
+                               trajectory);
+
+        move_group->execute(trajectory);
+
+        if (robot == "manipulator_3") {
+            // close the gripper using gripper_3 group
+            // define the move group
+            moveit::planning_interface::MoveGroupInterface gripper_3("gripper_3");
+            gripper_3.setNamedTarget("open_3");
+            gripper_3.setMaxVelocityScalingFactor(0.8);
+            gripper_3.move();
+            ros::Duration(0.1).sleep();
+        }
+        // detach the object
+        move_group->detachObject(goal->pick_object_name);
+        ros::Duration(0.1).sleep();
 
         path.clear();
-        path.insert(path.end(), path_2.begin(), path_2.end());
+
         std::reverse(path_2.begin(), path_2.end());
         path.insert(path.end(), path_2.begin(), path_2.end());
 
@@ -335,22 +423,23 @@ public:
         ims::profileTrajectory(path.at(0),
                                path.back(),
                                path,
-                               move_group,
+                               *move_group,
                                trajectory);
-        if (action_name_ == "manipulator_1"){
-            ros::Duration(5.0).sleep();
-        }
-        move_group.execute(trajectory);
+//        if (robot == "manipulator_1"){
+//            ros::Duration(8.0).sleep();
+//        }
+        move_group->execute(trajectory);
 
-        move_group.setNamedTarget("ready" + action_name_.substr(action_name_.size() - 1));
-        move_group.move();
+        move_group->setNamedTarget("ready" + robot.substr(robot.size() - 1));
+        move_group->move();
 
         if(success)
         {
             result_.success = true;
-            ROS_INFO("%s: Succeeded", action_name_.c_str());
+            ROS_INFO("%s: Succeeded", robot.c_str());
             // set the action state to succeeded
-            as_.setSucceeded(result_);
+            as->setSucceeded(result_);
+            return;
         }
     }
 };
@@ -368,9 +457,9 @@ int main(int argc, char** argv) {
         }
     }
     // initialize ROS
-    ros::init(argc, argv, "ctmp_atms_action_node");
+    ros::init(argc, argv, "~");
     ros::NodeHandle nh;
-    ros::AsyncSpinner spinner(3);
+    ros::AsyncSpinner spinner(8);
     spinner.start();
 
     ros::param::set("/manipulator_1/regions/pick_region/min_limits",
@@ -401,12 +490,11 @@ int main(int argc, char** argv) {
                     std::vector<double>{1.2, 0.25, 0.74, 0.0, 0.0, -1.570796});
 
     // create the action server
-    std::vector<std::shared_ptr<ctmpActionServer>> ctmp_action_servers;
-    for (const auto& robot_name : robots){
-        ros::NodeHandle pnh(robot_name);
-        ctmp_action_servers.emplace_back(std::make_shared<ctmpActionServer>(robot_name, nh, pnh));
-    }
+    ros::NodeHandle pnh("~");
+    ctmpActionServer ctmp_action_server(robots, nh, pnh);
+
 
     ros::waitForShutdown();
+//    ros::spin();
     return 0;
 }

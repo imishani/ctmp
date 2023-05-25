@@ -36,6 +36,8 @@
 #include <ctmp/ctmp_utils.hpp>
 //#include <manipulation_planning/utils.hpp>
 #include <ctmp/planner_zero.hpp>
+#include <planners/wAStar.hpp>
+
 
 // search includes
 #include <common/types.hpp>
@@ -92,6 +94,8 @@ private:
 
     void InitMoveitOMPL();
 
+    void InitwAstarIMS();
+
     /// @brief Plan a path from the start state to the attractor using OMPL.
     /// @param attractor The attractor state. IMPORTANT: The attractor state here is in configuration space!
     /// @param path The path from the start state to the attractor.
@@ -114,11 +118,12 @@ private:
 //    ManipLattice* m_manip_space;
     std::shared_ptr<ims::ctmpActionSpace> m_task_space;
 
-
     std::shared_ptr<ims::plannerZero> m_planner_zero;
 
     std::vector<region> m_regions;
     std::vector<region> m_iregions;
+
+    std::unique_ptr<ims::wAStar> m_wAStar_ptr;
 
     std::unique_ptr<moveit::planning_interface::MoveGroupInterface> m_group;
     moveit::planning_interface::PlanningSceneInterface m_planning_scene_interface;

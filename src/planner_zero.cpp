@@ -142,7 +142,6 @@ double ims::plannerZero::compute_reachability(double r_max, int attractor_state_
         state* min_state = m_open.min();
         m_open.pop();
         min_state->setClosed();
-
         m_reachability_expansions++;
         if (min_state->h > m_h_max) {
             m_h_max_states.clear();
@@ -199,14 +198,16 @@ double ims::plannerZero::compute_reachability(double r_max, int attractor_state_
         start = std::chrono::system_clock::now();
         stateType joint_states_min = min_state->getMappedState();
         if (succ_state_g != nullptr && (succ_state_g->greedy &&
-            m_actionSpacePtr->isStateToStateValid(min_state->getState(), succ_state_g->getState()))) {
+//            m_actionSpacePtr->isStateToStateValid(min_state->getState(), succ_state_g->getState()))) {
+            !joint_states_min.empty())) {
             min_state->greedy = true;
             m_actionSpacePtr->VisualizePoint(min_state->getStateId(), "greedy");
         }
             ///@}
 
             ///@{ Terminating condition --line 10-11
-        else if (m_actionSpacePtr->isStateValid(min_state->getState(), joint_states_min)){
+//        else if (m_actionSpacePtr->isStateValid(min_state->getState(), joint_states_min)){
+        else if (!joint_states_min.empty()){   // TODO: Its a hack. I check validity of the state when generating successors and  if valid then I save mappedstate.
             m_actionSpacePtr->VisualizePoint(min_state->getStateId(), "exited");
             radius = min_state->h;
 
@@ -360,13 +361,21 @@ bool ims::plannerZero::findGreedyPath(int goal_state_id, int attr_state_id, std:
     // get the current time
     auto start_time = std::chrono::system_clock::now();
     // max time:
-    double max_time = 1; // seconds
+    double max_time = 3; // seconds
     while (state_ind != attr_state_id ) {
         m_preds.clear(); m_costs.clear();
         path.push_back(state_ind);
         auto state = m_actionSpacePtr->getState(state_ind);
-        if (state->h < 1e-2) {
+        if (state->h < 1.79e-2) {
             break;
+        }
+        // check if time is more than max time
+        auto current_time = std::chrono::system_clock::now();
+        std::chrono::duration<double> duration = current_time - start_time;
+        if (duration.count() > max_time) {
+            ROS_WARN("Timeout in finding greedy path");
+            ROS_INFO("Current h: %f", state->h);
+            return false;
         }
         m_actionSpacePtr->getSuccessors(state_ind, m_preds, m_costs);
         double min_cost = std::numeric_limits<double>::infinity();

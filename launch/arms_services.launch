@@ -15,6 +15,7 @@
           launch-prefix="$(arg launch-prefix)"/>
     <!--  Sleep  -->
     <node name="listener1" pkg="roscpp_tutorials" type="listener" launch-prefix="bash -c 'sleep $(arg servers_delay); $0 $@' " />
+
     <node pkg="scene_builder" type="scene_builder_frame" name="scene_builder_frame"/>
 
     <!--    Load params-->
@@ -24,8 +25,14 @@
     <!--  Run arms_services_node  -->
 
     <node pkg="ctmp" type="ctmp_arm_node_service"
-          name="arm_1_service" args="manipulator_1 manipulator_2 manipulator_3" output="screen"
+          name="ctmp_actions1" args="manipulator_1 manipulator_2 manipulator_3" output="screen"
           launch-prefix="$(arg launch-prefix)"/>
+<!--    <node pkg="ctmp" type="ctmp_arm_node_service"-->
+<!--          name="ctmp_actions2" args="manipulator_2" output="screen"-->
+<!--          launch-prefix="$(arg launch-prefix)"/>-->
+<!--    <node pkg="ctmp" type="ctmp_arm_node_service"-->
+<!--              name="ctmp_actions3" args="manipulator_3" output="screen"-->
+<!--              launch-prefix="$(arg launch-prefix)"/>-->
 
 <!--    <node pkg="ctmp" type="ctmp_arm_node_service"-->
 <!--          name="arm_2_service" args="manipulator_2" output="screen"-->

@@ -60,7 +60,7 @@ bool ZeroTimePlanner::initializePlanner(const std::shared_ptr<ims::ctmpActionSpa
     std::string current_dir = ros::package::getPath("ctmp");
     read_write_dir = current_dir + "/data/";
     bool m_pick;
-    m_nh = ros::NodeHandle("~");
+    m_nh = ros::NodeHandle(arm_name);
     m_nh.param("pick", m_pick, false);
     if (m_pick){
         // get current directory
@@ -95,109 +95,110 @@ void ZeroTimePlanner::setStartAndGoal(const stateType &start_state, const stateT
 void ZeroTimePlanner::PreProcess(const stateType &full_start_state) {
     m_regions.clear();
     ROS_INFO("Preprocessing");
-    if (m_pp_planner == "RRTConnect") {
+    if (m_pp_planner == "RRTConnect")
         InitMoveitOMPL();
+    else
+        InitwAstarIMS();
 
 //        unsigned int radius_max_v = 1;
-        double radius_max_v = 0.2;
+    double radius_max_v = 0.2;
 //        unsigned int radius_max_i = 100;
-        double radius_max_i = 0.2;
-        ROS_INFO("Waiting for regions");
-        m_task_space->PassRegions(&m_regions, &m_iregions);
-        ROS_INFO("Preprocessing with %s", m_pp_planner.c_str());
-        // 1. SAMPLE ATTRACTOR
-        int maximum_tries = 10000;
-        stateType sampled_state;
-        // also sets the attractor as goal for heuristic functions
-        int sampled_state_id = m_task_space->SampleAttractorState(sampled_state, maximum_tries);
-        if (sampled_state_id == -1) {
-            ROS_ERROR("Failed to sample first attractor");
-            return;
-        }
-        m_task_space->VisualizePoint(sampled_state_id, "attractor");
+    double radius_max_i = 0.2;
+    ROS_INFO("Waiting for regions");
+    m_task_space->PassRegions(&m_regions, &m_iregions);
+    ROS_INFO("Preprocessing with %s", m_pp_planner.c_str());
+    // 1. SAMPLE ATTRACTOR
+    int maximum_tries = 10000;
+    stateType sampled_state;
+    // also sets the attractor as goal for heuristic functions
+    int sampled_state_id = m_task_space->SampleAttractorState(sampled_state, maximum_tries);
+    if (sampled_state_id == -1) {
+        ROS_ERROR("Failed to sample first attractor");
+        return;
+    }
+    m_task_space->VisualizePoint(sampled_state_id, "attractor");
 
-        while (!m_task_space->m_valid_front.empty() || !m_task_space->m_invalid_front.empty()) {
-            while (!m_task_space->m_valid_front.empty()) {
+    while (!m_task_space->m_valid_front.empty() || !m_task_space->m_invalid_front.empty()) {
+        while (!m_task_space->m_valid_front.empty()) {
 
-                int attractor_state_id = m_task_space->SetAttractorState();
+            int attractor_state_id = m_task_space->SetAttractorState();
 
-                if (!m_planner_zero->is_state_covered(attractor_state_id)) {
-                    m_task_space->VisualizePoint(attractor_state_id, "attractor");
-                    std::vector<stateType> path;
-                    // 2. PLAN PATH TO ACTUAL GOAL
+            if (!m_planner_zero->is_state_covered(attractor_state_id)) {
+                m_task_space->VisualizePoint(attractor_state_id, "attractor");
+                std::vector<stateType> path;
+                // 2. PLAN PATH TO ACTUAL GOAL
 
-                    bool ret;
-                    auto attr_state = m_task_space->getState(attractor_state_id);
-                    if (attr_state->getMappedState().empty()){
-                        stateType mapped_state;
-                        m_task_space->getIKSolution(attr_state->getState(), mapped_state);
-                        attr_state->setMappedState(mapped_state);
-                    }
-                    if (m_pp_planner != "ARAStar") {
-                        ret = PlanPathFromStartToAttractorOMPL(attr_state->getMappedState(), path);
-                        // TODO: Modify PlanPathFromStartToAttractorOMPL so it will return `path`
-                    } else {
-                        ret = PlanPathFromStartToAttractorIMS(attr_state->getMappedState(), path);
-                    }
-//                    if (!ret){
-//                        continue;
-//                    }
-
-                    // getchar();
-                    // 3. COMPUTE REACHABILITY
-                    m_task_space->UpdateSearchMode(REACHABILITY);
-                    // reachability search
-//                    unsigned int radius = m_planner_zero->compute_reachability(radius_max_v, attractor_state_id);
-                    double radius = m_planner_zero->compute_reachability(radius_max_v, attractor_state_id);
-
-                    // 4. ADD REGION
-                    region r;
-                    r.start = full_start_state;
-                    r.radius = radius;
-                    r.state = attr_state->getState();
-                    r.path = path;
-                    m_regions.push_back(r);
-
-                    ROS_INFO("Radius %f, Regions so far %zu", radius, m_regions.size());
-                    ROS_INFO("Path size: %zu", r.path.size());
-                    // ROS_INFO m_regions:
-
-                    std::vector<int> open;
-                    m_planner_zero->get_frontier_stateids(open);
-
-                    m_task_space->FillFrontierLists(open);
-
+                bool ret;
+                auto attr_state = m_task_space->getState(attractor_state_id);
+                if (attr_state->getMappedState().empty()){
+                    stateType mapped_state;
+                    m_task_space->getIKSolution(attr_state->getState(), mapped_state);
+                    attr_state->setMappedState(mapped_state);
                 }
+                if (m_pp_planner == "RRTConnect") {
+                    ret = PlanPathFromStartToAttractorOMPL(attr_state->getMappedState(), path);
+                    // TODO: Modify PlanPathFromStartToAttractorOMPL so it will return `path`
+                } else {
+                    ret = PlanPathFromStartToAttractorIMS(attr_state->getState(), path);
+                }
+                if (!ret){
+                    continue;
+                }
+
+                // getchar();
+                // 3. COMPUTE REACHABILITY
+                m_task_space->UpdateSearchMode(REACHABILITY);
+                // reachability search
+//                    unsigned int radius = m_planner_zero->compute_reachability(radius_max_v, attractor_state_id);
+                double radius = m_planner_zero->compute_reachability(radius_max_v, attractor_state_id);
+
+                // 4. ADD REGION
+                region r;
+                r.start = full_start_state;
+                r.radius = radius;
+                r.state = attr_state->getState();
+                r.path = path;
+                m_regions.push_back(r);
+
+                ROS_INFO("Radius %f, Regions so far %zu", radius, m_regions.size());
+                ROS_INFO("Path size: %zu", r.path.size());
+                // ROS_INFO m_regions:
+
+                std::vector<int> open;
+                m_planner_zero->get_frontier_stateids(open);
+
+                m_task_space->FillFrontierLists(open);
+
             }
-            while (!m_task_space->m_invalid_front.empty()) {
+        }
+        while (!m_task_space->m_invalid_front.empty()) {
 
-                int iv_start_state_id = m_task_space->SetInvalidStartState();
+            int iv_start_state_id = m_task_space->SetInvalidStartState();
 
-                if (!m_planner_zero->is_state_covered(iv_start_state_id)) {
-                    m_task_space->VisualizePoint(sampled_state_id, "attractor");
+            if (!m_planner_zero->is_state_covered(iv_start_state_id)) {
+                m_task_space->VisualizePoint(sampled_state_id, "attractor");
 
 //                    int radius = m_planner_zero->search_for_valid_uncovered_states(radius_max_i, iv_start_state_id);
-                    double radius = m_planner_zero->search_for_valid_uncovered_states(radius_max_i, iv_start_state_id);
-                    region r;
-                    r.radius = radius;
-                    r.state = m_task_space->getState(iv_start_state_id)->getState();
-                    m_iregions.push_back(r);
+                double radius = m_planner_zero->search_for_valid_uncovered_states(radius_max_i, iv_start_state_id);
+                region r;
+                r.radius = radius;
+                r.state = m_task_space->getState(iv_start_state_id)->getState();
+                m_iregions.push_back(r);
 
-                    ROS_INFO("Radius %f, IRegions so far %zu", radius, m_iregions.size());
+                ROS_INFO("Radius %f, IRegions so far %zu", radius, m_iregions.size());
 
-                    std::vector<int> open;
-                    m_planner_zero->get_frontier_stateids(open);
-                    m_task_space->FillFrontierLists(open);
+                std::vector<int> open;
+                m_planner_zero->get_frontier_stateids(open);
+                m_task_space->FillFrontierLists(open);
 
-                    if (!m_task_space->m_valid_front.empty()) {
-                        break;
-                    }
+                if (!m_task_space->m_valid_front.empty()) {
+                    break;
                 }
             }
-            m_task_space->PruneRegions();
-            WriteRegions();
         }
     }
+    m_task_space->PruneRegions();
+    WriteRegions();
 }
 
 
@@ -217,6 +218,10 @@ void ZeroTimePlanner::GraspQuery(std::vector<stateType> &path, std::string grasp
     for (boost::filesystem::directory_iterator itr(dir); itr != end_itr; ++itr) {
         std::string grasp_dir_ = itr->path().string();
         std::string grasp_name = itr->path().filename().string();
+        // check if group name is a part of the file name. If not, continue
+        if (grasp_name.find(m_task_space->getPlanningGroupName()) == std::string::npos) {
+            continue;
+        }
         ROS_INFO("Grasp dir: %s", grasp_dir_.c_str());
         ROS_INFO("Grasp: %s", grasp_name.c_str());
 
@@ -227,8 +232,6 @@ void ZeroTimePlanner::GraspQuery(std::vector<stateType> &path, std::string grasp
         ROS_INFO("Regions: %zu", m_regions.size());
 
         // TODO: Add a check to see if goal is in global XYZ goal region
-
-        // Look for regions that contain the goal (position only)
         // get current time
         auto now = std::chrono::system_clock::now();
         ROS_INFO("Looking for region containing start state");
@@ -253,6 +256,10 @@ void ZeroTimePlanner::GraspQuery(std::vector<stateType> &path, std::string grasp
         }
         auto goal_state_ind = m_task_space->getOrCreateState(m_goal);
         auto goal_state = m_task_space->getState(goal_state_ind);
+        // TODO: make sure the following is ok
+//        if (goal_state->getMappedState().empty()){
+//            goal_state->setMappedState(attr_state->getMappedState());
+//        }
 
         std::vector<int> greedy_path;
         if (!m_planner_zero->findGreedyPath(goal_state_ind, attr_state_ind, greedy_path)){
@@ -274,6 +281,7 @@ void ZeroTimePlanner::GraspQuery(std::vector<stateType> &path, std::string grasp
             path.push_back(state_->getMappedState());   // state_->getState()
             seed = state_->getMappedState();
         }
+        break;
     }
 }
 
@@ -282,6 +290,15 @@ void ZeroTimePlanner::InitMoveitOMPL() {
     ROS_INFO("Planning path with OMPL");
     m_group->setPlanningTime(5.0);
     m_group->setPlannerId("RRTConnect");
+}
+
+void ZeroTimePlanner::InitwAstarIMS() {
+    m_group = std::make_unique<moveit::planning_interface::MoveGroupInterface>(arm_name);
+    ROS_INFO("Planning path with IMS");
+    double weight = 10.0;
+    auto* heu = new ims::SE3HeuristicRPY;
+    ims::wAStarParams wAparams (heu, weight);
+    m_wAStar_ptr = std::make_unique<ims::wAStar>(wAparams);
 }
 
 bool ZeroTimePlanner::PlanPathFromStartToAttractorOMPL(const stateType &attractor, std::vector<stateType> &path) {
@@ -327,8 +344,34 @@ bool ZeroTimePlanner::PlanPathFromStartToAttractorOMPL(const stateType &attracto
 }
 
 bool ZeroTimePlanner::PlanPathFromStartToAttractorIMS(const stateType &attractor, std::vector<stateType> &path) {
-    // TODO: Implement this function
-    return false;
+    stateType start_state;
+    m_task_space->getWorkspaceState(start_state);
+    ROS_INFO_STREAM("Start state: " << start_state[0] << " " << start_state[1] << " " << start_state[2]
+                    << " " << start_state[3] << " " << start_state[4] << " " << start_state[5] << std::endl);
+    ROS_INFO_STREAM("Attractor: " << attractor[0] << " " << attractor[1] << " " << attractor[2]
+                    << " " << attractor[3] << " " << attractor[4] << " " << attractor[5] << std::endl);
+    // TODO: Lets assume for the moment that the attractor is discretized
+    try{
+        m_wAStar_ptr->initializePlanner(m_task_space, start_state, attractor);
+    }
+    catch (std::exception& e) {
+        std::cout << e.what() << std::endl;
+        return false;
+    }
+    std::vector<ims::state*> ims_path;
+    if (!m_wAStar_ptr->plan(ims_path)){
+        ROS_WARN("IMS failed to plan");
+        return false;
+    }
+    else {
+        ROS_INFO("Solution found by IMS");
+    }
+    path.resize(ims_path.size());
+    for (size_t i = 0; i < ims_path.size(); ++i) {
+        auto state = ims_path[i];
+        path[i] = state->getState();
+    }
+    return true;
 }
 
 void ZeroTimePlanner::WriteRegions(std::string path) {
@@ -378,9 +421,18 @@ bool ZeroTimePlanner::plan(std::vector<stateType> &path) {
     else {
         ROS_INFO("Querying");
         GraspQuery(path);
-        return true;
+        if (path.empty()) {
+            ROS_WARN("No path found");
+            return false;
+        } else {
+            ROS_INFO("Path found");
+            return true;
+        }
     }
 }
+
+
+
 
 
 

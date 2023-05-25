@@ -233,40 +233,6 @@ namespace ims{
         }
 
 
-        /// @brief Check state validity (IK and collision) and saves the ik solution in joint_state
-        /// @param state_val The state to check
-        /// @param joint_state The ik solution
-        /// @return True if the state is valid, false otherwise
-        bool isStateValid(const stateType& state_val, stateType& joint_state) {
-            // check if the state is valid
-            switch (mManipulationType->getSpaceType()) {
-                case manipulationType::spaceType::ConfigurationSpace:
-                    return mMoveitInterface->isStateValid(state_val);
-                case manipulationType::spaceType::WorkSpace:
-                    geometry_msgs::Pose pose;
-                    pose.position.x = state_val[0]; pose.position.y = state_val[1]; pose.position.z = state_val[2];
-                    // Euler angles to quaternion
-                    Eigen::Quaterniond q;
-                    from_euler_zyx(state_val[5], state_val[4], state_val[3], q);
-                    pose.orientation.x = q.x(); pose.orientation.y = q.y();
-                    pose.orientation.z = q.z(); pose.orientation.w = q.w();
-                    bool succ = mMoveitInterface->calculateIK(pose,joint_state);
-                    if (!succ) {
-                        ROS_INFO("IK failed");
-                        return false;
-                    }
-                    else {
-                        // print the joint state
-//                        ROS_INFO("Joins state size: %zu, IK solution: %f %f %f %f %f %f",
-//                                 joint_state.size(), joint_state[0]*180/M_PI, joint_state[1]*180/M_PI,
-//                                 joint_state[2]*180/M_PI, joint_state[3]*180/M_PI,
-//                                 joint_state[4]*180/M_PI, joint_state[5]*180/M_PI);
-                        return mMoveitInterface->isStateValid(joint_state);
-                    }
-            }
-            return false;
-        }
-
         /// @brief Check if the state is in some of the regions which were preprocessed
         /// @param valid True if the state is valid, false otherwise
         /// @param state_id The state id
@@ -341,7 +307,8 @@ namespace ims{
             roundStateToDiscretization(workspace_state, mManipulationType->mStateDiscretization);
             // check if state is valid
             if (!isStateValid(workspace_state, joint_state)) {
-                ROS_DEBUG_NAMED("CTMP", "Sampled state is not valid");
+//                ROS_DEBUG_NAMED("CTMP", "Sampled state is not valid");
+//                ROS_INFO_STREAM("Sampled state is not valid " << workspace_state[0] << " " << workspace_state[1] << " " << workspace_state[2] << " " << workspace_state[3] << " " << workspace_state[4] << " " << workspace_state[5]);
                 return false;
             } else {
                 return true;
@@ -352,7 +319,8 @@ namespace ims{
         /// @param workspace_state The state
         /// @param position_only If true, heck only the position values. Default is false
         /// @return int The region id, -1 if no region was found
-        int FindRegionContainingState_WS(const stateType& workspace_state, bool position_only=false){
+        int FindRegionContainingState_WS(const stateType& workspace_state,
+                                         bool position_only=false){
             int query_state_id = getOrCreateState(workspace_state);
             bool covered = false;
             int reg_idx = 0;
@@ -548,23 +516,151 @@ namespace ims{
         }
 
 
+        bool getSuccessorsWs(int curr_state_ind,
+                                     std::vector<state*>& successors,
+                                     std::vector<double>& costs) override {
+            // get the current state
+            auto curr_state = this->getState(curr_state_ind);
+            auto curr_state_val = curr_state->getState();
+            // get the actions
+            auto actions = mManipulationType->getActions();
+            // convert to quaternion
+            Eigen::Quaterniond q_curr;
+            from_euler_zyx(curr_state_val[5], curr_state_val[4], curr_state_val[3], q_curr);
+            // get the successors
+            stateType new_state_val;
+            for (auto action : actions) {
+                new_state_val.clear();
+                // create a new state in the length of the current state
+                new_state_val.resize(curr_state_val.size());
+                // increment the xyz coordinates
+                for (int i {0} ; i < 3 ; i++) {
+                    new_state_val[i] = curr_state_val[i] + action[i];
+                }
+
+                Eigen::Quaterniond q_action {action[6], action[3], action[4], action[5]};
+                auto q_new = q_curr * q_action;
+
+                // convert the quaternion to euler angles
+                get_euler_zyx(q_new, new_state_val[5], new_state_val[4], new_state_val[3]);
+                normalize_euler_zyx(new_state_val[5], new_state_val[4], new_state_val[3]);
+                // discretize
+                roundStateToDiscretization(new_state_val, mManipulationType->mStateDiscretization);
+
+//                bool succ; stateType mapped_state;
+//                if (curr_state->getMappedState().empty()){
+//                    succ = isStateValid(new_state_val,
+//                                        mapped_state);
+//                }
+//                else
+//                    succ = isStateValid(new_state_val,
+//                                        curr_state->getMappedState(),
+//                                        mapped_state);
+//                if (succ) {
+                    // create a new state
+                int next_state_ind = getOrCreateState(new_state_val);
+                auto new_state = this->getState(next_state_ind);
+//                new_state->setMappedState(mapped_state);
+                // add the state to the successors
+                successors.push_back(new_state);
+                // add the cost
+                double cost {0};
+                for (int i {0} ; i < 3 ; i++) {
+                    cost += action[i]*action[i];
+                }
+                // add the cost of the rotation which is quaternion
+                double r, p, y;
+                get_euler_zyx(q_action, y, p, r);
+                cost += r*r + p*p + y*y;
+                costs.push_back(cost);
+//                }
+            }
+            return true;
+        }
+
+        bool getSuccessorsCs(int curr_state_ind,
+                                     std::vector<state*>& successors,
+                                     std::vector<double>& costs) override{
+            // get the current state
+            auto curr_state = this->getState(curr_state_ind);
+            auto curr_state_val = curr_state->getState();
+            // get the actions
+            auto actions = mManipulationType->getActions();
+            // get the successors
+            for (auto action : actions) {
+                // create a new state in the length of the current state
+                stateType new_state_val {};
+                new_state_val.resize(curr_state_val.size());
+                std::fill(new_state_val.begin(), new_state_val.end(), 0.0);
+
+                for (int i {0} ; i < curr_state_val.size() ; i++) {
+                    new_state_val[i] = curr_state_val[i] + action[i];
+                }
+                // normalize the angles
+                normalizeAngles(new_state_val);
+                // discretize the state
+                roundStateToDiscretization(new_state_val, mManipulationType->mStateDiscretization);
+
+                // if (isStateToStateValid(curr_state_val, new_state_val)) {
+                if (isStateValid(new_state_val)) {
+                    // create a new state
+                    int next_state_ind = getOrCreateState(new_state_val);
+                    auto new_state = this->getState(next_state_ind);
+                    // add the state to the successors
+                    successors.push_back(new_state);
+                    // add the cost
+                    // TODO: change this to the real cost
+                    double norm = 0;
+                    for (double i : action) {
+                        norm += i * i;
+                    }
+                    costs.push_back(sqrt(norm));
+                }
+            }
+            return true;
+        }
+
+
+
         bool getSuccessors(int curr_state_ind,
                            std::vector<ims::state*>& successors,
                            std::vector<double>& costs) override{
-            bool success = ManipulationActionSpace::getSuccessors(curr_state_ind, successors, costs);
-            // if REACHABILITY mode, check if successors in goal region. If not, remove from successors
-            if (m_search_mode == REACHABILITY){
-                std::vector<ims::state*> pruned_successors;
+            bool success;
+            if (mManipulationType->getSpaceType() == manipulationType::spaceType::ConfigurationSpace) {
+                success = getSuccessorsCs(curr_state_ind,
+                                          successors,
+                                          costs);
+            } else {
+                success = getSuccessorsWs(curr_state_ind,
+                                          successors,
+                                          costs);
+            }
+            auto curr_state = this->getState(curr_state_ind);
+            // if REACHABILITY mode, check if successors in goal region.
+            // If not, remove from successors
+            if (m_search_mode == REACHABILITY) {
+                std::vector<ims::state *> pruned_successors;
                 std::vector<double> pruned_costs;
-                std::vector<ims::state*> remove;
+                std::vector<ims::state *> remove;
                 for (size_t i = 0; i < successors.size(); ++i) {
-                    auto* entry = successors[i];
+                    auto *entry = successors[i];
                     auto ws_child = entry->getState();
-                    if (isStateInGoalRegion(ws_child)){
+                    if (isStateInGoalRegion(ws_child)) {
+                        bool succ;
+                        stateType mapped_state;
+                        if (curr_state->getMappedState().empty()) {
+                            succ = isStateValid(ws_child,
+                                                mapped_state);
+                        } else
+                            succ = isStateValid(ws_child,
+                                                curr_state->getMappedState(),
+                                                mapped_state);
+                        if (succ) {
+                            entry->setMappedState(mapped_state);
+                        }
                         pruned_successors.push_back(entry);
                         pruned_costs.push_back(costs[i]);
-                    }
-                    else {
+                    } else {
                         // delete entry;
                         remove.push_back(entry);
                     }
@@ -573,6 +669,25 @@ namespace ims{
                 costs = pruned_costs;
                 // delete successors
             }
+//            } else if (m_search_mode == QUERY){
+//                std::vector<ims::state*> pruned_successors;
+//                std::vector<double> pruned_costs;
+//                std::vector<ims::state*> remove;
+//                for (size_t i = 0; i < successors.size(); ++i) {
+//                    auto* entry = successors[i];
+//                    auto ws_child = entry->getState();
+//                    if (isStateInGoalRegion(ws_child)){
+//                        pruned_successors.push_back(entry);
+//                        pruned_costs.push_back(costs[i]);
+//                    }
+//                    else {
+//                        // delete entry;
+//                        remove.push_back(entry);
+//                    }
+//                }
+//                successors = pruned_successors;
+//                costs = pruned_costs;
+//            }
             return success;
         }
 
