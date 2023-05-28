@@ -57,7 +57,7 @@ int main(int argc, char** argv) {
     ros::param::set("/manipulator_1/regions/place_region/min_limits",
                     std::vector<double>{0.7, -0.25, 0.86, 0, 0, 0});
     ros::param::set("/manipulator_1/regions/place_region/max_limits",
-                    std::vector<double>{1.2, 0.25, 0.86, 0, 0, 0});
+                    std::vector<double>{1.2, 0.25, 0.92, 0, 0, 0});
 
     ros::param::set("/manipulator_2/pick", true);
     ros::param::set("/ctmp_test/pick", true);

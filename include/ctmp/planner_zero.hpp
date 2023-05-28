@@ -62,6 +62,7 @@ namespace ims {
         double compute_reachability(double r_max,
                                           int attractor_state_id);
 
+
         void get_frontier_stateids(std::vector<int>& state_ids);
 
 //        int search_for_valid_uncovered_states(

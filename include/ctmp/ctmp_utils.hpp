@@ -139,6 +139,7 @@ struct region
     double radius;
     stateType state; // workspace state
     std::vector<stateType> path;
+    std::vector<stateType> path2;
 
     template <typename Archive>
     void serialize(Archive& ar, const unsigned int version)
@@ -147,6 +148,7 @@ struct region
         ar & radius;
         ar & state;
         ar & path;
+        ar & path2;
     }
 };
 

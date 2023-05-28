@@ -199,7 +199,10 @@ double ims::plannerZero::compute_reachability(double r_max, int attractor_state_
         stateType joint_states_min = min_state->getMappedState();
         if (succ_state_g != nullptr && (succ_state_g->greedy &&
 //            m_actionSpacePtr->isStateToStateValid(min_state->getState(), succ_state_g->getState()))) {
-            !joint_states_min.empty())) {
+            !joint_states_min.empty()) && m_actionSpacePtr->isGraspable(joint_states_min,
+                                                                        min_state->getState(),
+                                                                        min_state->getState())) {
+
             min_state->greedy = true;
             m_actionSpacePtr->VisualizePoint(min_state->getStateId(), "greedy");
         }
@@ -268,6 +271,7 @@ double ims::plannerZero::compute_reachability(double r_max, int attractor_state_
     /// line 14
     return radius;
 }
+
 
 double ims::plannerZero::search_for_valid_uncovered_states(double r_max, int iv_start_state_id) {
     ++m_call_number;

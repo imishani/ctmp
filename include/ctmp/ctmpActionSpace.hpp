@@ -276,6 +276,9 @@ namespace ims{
                 if (!SampleRobotState(joint_state, ws_state)){
                     continue;
                 }
+                if (!isGraspable(joint_state, ws_state, ws_state)){
+                    continue;
+                }
                 state = ws_state;
                 attractor_state_id = getOrCreateState(state);
                 // check if state is covered
@@ -386,6 +389,131 @@ namespace ims{
             workspace_states = pruned_states;
         }
 
+        /// @brief Check for graspability using Runge-Kutta method (RK4).
+        /// @param robot_state The robot state (configuration state) of th pre-grasp pose.
+        /// @param pregrasp_pose The pre-grasp pose (x, y,z, roll, pitch, yaw).
+        /// @param grasp_pose The grasp pose(x, y,z, roll, pitch, yaw).
+        /// @return True if the object is graspable, false otherwise.
+        bool isGraspable(const robot_state::RobotStatePtr& robot_state,
+                         const stateType &pregrasp_pose,
+                         const stateType &grasp_pose) {
+            // initial state (configuration space)
+            std::vector<double> theta0;
+            Eigen::VectorXd grasp_vec(6);
+            Eigen::VectorXd pre_grasp_vec(6);
+            for (size_t i = 0; i < 6; ++i) {
+                grasp_vec[i] = grasp_pose[i];
+                pre_grasp_vec[i] = pregrasp_pose[i];
+            }
+            pre_grasp_vec[2] += 0.2;
+            std::vector<stateType> path;
+            robot_state->copyJointGroupPositions(getPlanningGroupName(), theta0);
+            path.push_back(theta0);
+            // get the Jacobian
+            Eigen::MatrixXd J;
+            auto joint_model_group = robot_state->getJointModelGroup(getPlanningGroupName());
+            robot_state->getJacobian(joint_model_group, robot_state->getLinkModel(joint_model_group->getLinkModelNames().back()),
+                                     Eigen::Vector3d(0, 0, 0), J);
+//    // rotate the jacobian to the end effector frame
+//    Eigen::Isometry3d T = robot_state->getGlobalLinkTransform(joint_model_group->getLinkModelNames().back()).inverse(Eigen::Isometry);
+            // Set the action type to configuration space, only for state checking purposes!
+            auto action_type = getManipActionType();
+            setManipActionType(manipulationType::spaceType::ConfigurationSpace);
+
+            Eigen::MatrixXd J_pinv;
+            double h = 1 / 10.0;
+            auto theta = theta0;
+            auto curr_grasp_vec = pre_grasp_vec;
+            Eigen::MatrixXd J_inv;
+            for (int i{0} ; i < 10; i++){
+                // Compute the Jacobian
+                Eigen::JacobiSVD<Eigen::MatrixXd> svd(J, Eigen::ComputeThinU | Eigen::ComputeThinV);
+                double tolerance = std::max(J.cols(),
+                                            J.rows()) *
+                                   svd.singularValues().array().abs().maxCoeff() *
+                                   std::numeric_limits<double>::epsilon();
+
+                // Compute the inverse of a matrix given its SVD and a tolerance for singular values close to zero:
+                J_pinv = svd.matrixV() *
+                         svd.singularValues().array().abs().cwiseInverse().cwiseMax(tolerance).matrix().asDiagonal() *
+                         svd.matrixU().adjoint();
+
+//        J_pinv = svd.matrixV() * Eigen::MatrixXd(svd.singularValues().array().abs().inverse().matrix().asDiagonal()) * svd.matrixU().transpose();
+                J_inv = J.transpose() * (J * J.transpose()).inverse();
+//        const Eigen::MatrixXd U = svd.matrixU();
+//        const Eigen::MatrixXd V = svd.matrixV();
+//        const Eigen::VectorXd S = svd.singularValues();
+//        Eigen::VectorXd Sinv = S;
+//        static const double pinvtoler = std::numeric_limits<float>::epsilon();
+//        double maxsv = 0.0;
+//        for (std::size_t i = 0; i < static_cast<std::size_t>(S.rows()); ++i)
+//            if (fabs(S(i)) > maxsv)
+//                maxsv = fabs(S(i));
+//        for (std::size_t i = 0; i < static_cast<std::size_t>(S.rows()); ++i){
+//            // Those singular values smaller than a percentage of the maximum singular value are removed
+//            if (fabs(S(i)) > maxsv * pinvtoler)
+//                Sinv(i) = 1.0 / S(i);
+//            else
+//                Sinv(i) = 0.0;
+//            }
+//        Eigen::MatrixXd Jinv_moveit = (V * Sinv.asDiagonal() * U.transpose());
+//        std::cout << "Jinv_moveit: " << std::endl << Jinv_moveit << std::endl;
+
+                // check if J_pinv and J_inv are the same
+                if ((J_pinv - J_inv).norm() > 0.0001){
+                    ROS_ERROR_STREAM("J_pinv and J_inv are not the same");
+                }
+
+                // RK(4)
+                auto k1 = h * (J_pinv * (grasp_vec - pre_grasp_vec));
+                auto k2 = h * (J_pinv * (grasp_vec - pre_grasp_vec + k1 / 2.0));
+                auto k3 = h * (J_pinv * (grasp_vec - pre_grasp_vec + k2 / 2.0));
+                auto k4 = h * (J_pinv * (grasp_vec - pre_grasp_vec + k3));
+                auto del_theta = (k1 + 2 * k2 + 2 * k3 + k4) / 6.0;
+                for (size_t j = 0; j < 6; ++j) {
+                    theta[j] += del_theta[j];
+                }
+                path.push_back(theta);
+                // update the robot state
+                robot_state->setJointGroupPositions(getPlanningGroupName(), theta);
+                robot_state->update();
+                // check if the new state is in collision and out of bounds
+                if (!robot_state->satisfiesBounds(joint_model_group)) {
+                    ROS_WARN("Out of bounds");
+                    setManipActionType(action_type);
+                    return false;
+                }
+                if (!isStateValid(theta)) {
+                    ROS_WARN("Grasping state is in collision!");
+                    setManipActionType(action_type);
+                    return false;
+                }
+
+//        robot_state->setFromDiffIK(robot_state->getJointModelGroup(arm_name), J_inv * (grasp_vec - curr_grasp_vec));
+
+                // update the current grasp vector using the current robot state FK
+//        auto curr_pose = robot_state->getGlobalLinkTransform(robot_state->getLinkModel(joint_model_group->getLinkModelNames().back()));
+//        curr_grasp_vec[0] = curr_pose.translation()[0]; curr_grasp_vec[1] = curr_pose.translation()[1]; curr_grasp_vec[2] = curr_pose.translation()[2];
+//        auto euler = curr_pose.rotation().eulerAngles(2, 1, 0);
+//        curr_grasp_vec[3] = euler[0]; curr_grasp_vec[4] = euler[1]; curr_grasp_vec[5] = euler[2];
+//        ims::normalize_euler_zyx(curr_grasp_vec[5], curr_grasp_vec[4], curr_grasp_vec[3]);
+                // update the Jacobian
+                robot_state->getJacobian(joint_model_group, robot_state->getLinkModel(joint_model_group->getLinkModelNames().back()),
+                                         Eigen::Vector3d(0, 0, 0), J);
+            }
+            // print path int degrees
+//            std::cout << "Path in degrees" << std::endl;
+//            for (auto & i : path) {
+//                for (size_t j = 0; j < 6; ++j) {
+//                    i[j] = i[j] * 180.0 / M_PI;
+//                    std::cout << i[j] << " ";
+//                }
+//                std::cout << std::endl;
+//            }
+            setManipActionType(action_type);
+            return true;
+        }
+
         /// @brief Fill the frontier lists with the given state ids
         /// @param state_ids The state ids
         void FillFrontierLists(const std::vector<int>& state_ids){
@@ -399,6 +527,19 @@ namespace ims{
                     m_invalid_front.insert(entry);
                 }
             }
+        }
+
+        /// @brief Check for graspability using Runge-Kutta method (RK4).
+        /// @param joint_state The robot state of the pre-grasp pose.
+        /// @param pregrasp_pose The pre-grasp pose (x, y,z, roll, pitch, yaw).
+        /// @param grasp_pose The grasp pose(x, y,z, roll, pitch, yaw).
+        /// @return True if the object is graspable, false otherwise.
+        bool isGraspable(const stateType& robot_state,
+                         const stateType& pregrasp_pose,
+                         const stateType& grasp_pose) {
+            robot_state::RobotStatePtr robot_state_ptr = mMoveitInterface->m_kinematic_state;
+            robot_state_ptr->setJointGroupPositions(getPlanningGroupName(), robot_state);
+            return isGraspable(robot_state_ptr, pregrasp_pose, grasp_pose);
         }
 
         /// @brief Set the attractor state to the first state in the valid frontier

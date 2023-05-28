@@ -60,6 +60,7 @@ bool ZeroTimePlanner::initializePlanner(const std::shared_ptr<ims::ctmpActionSpa
     std::string current_dir = ros::package::getPath("ctmp");
     read_write_dir = current_dir + "/data/";
     bool m_pick;
+    nh = ros::NodeHandle();
     m_nh = ros::NodeHandle(arm_name);
     m_nh.param("pick", m_pick, false);
     if (m_pick){
@@ -137,13 +138,22 @@ void ZeroTimePlanner::PreProcess(const stateType &full_start_state) {
                 }
                 if (m_pp_planner == "RRTConnect") {
                     ret = PlanPathFromStartToAttractorOMPL(attr_state->getMappedState(), path);
-                    // TODO: Modify PlanPathFromStartToAttractorOMPL so it will return `path`
                 } else {
                     ret = PlanPathFromStartToAttractorIMS(attr_state->getState(), path);
                 }
                 if (!ret){
                     continue;
                 }
+
+                // plan alternatives
+//                std::vector<std::vector<stateType>> alternatives;
+//                bool succ_alternatives = PlanAlternativePaths(attr_state->getMappedState(), path, alternatives);
+//                robot_state::RobotStatePtr checking_state = m_group->getCurrentState();
+//                std::vector<stateType> grasp_path;
+//                checking_state->setJointGroupPositions(m_group->getName(), attr_state->getMappedState());
+//                GetPathFromPreGraspToGrasp(attr_state->getState(),
+//                                           checking_state, attr_state->getState(),
+//                                           grasp_path);
 
                 // getchar();
                 // 3. COMPUTE REACHABILITY
@@ -199,6 +209,29 @@ void ZeroTimePlanner::PreProcess(const stateType &full_start_state) {
     }
     m_task_space->PruneRegions();
     WriteRegions();
+}
+
+bool ZeroTimePlanner::PlanAlternativePaths(const stateType & attractor,
+                                           const std::vector<stateType>& current_path,
+                                           std::vector<std::vector<stateType>>& new_paths) {
+    auto df = ims::getEmptyDistanceField();
+    ros::Publisher one_marker_pub = nh.advertise<visualization_msgs::Marker>("occ_marker", 0);
+    ros::Duration(0.1).sleep();
+    int num_paths {1};
+    for (auto& state : current_path){
+        moveit::core::RobotState robot_state = *m_group->getCurrentState();
+        // print the robot state joints
+        robot_state.setJointGroupPositions(m_group->getName(), state);
+        std::vector<std::vector<int>> occupancy_grid;
+        ims::getRobotOccupancy(df, robot_state, m_group, occupancy_grid);
+
+    }
+    unsigned int count_occ_cells = ims::countOccupiedCells(*df);
+    // visualize all occupied cells
+    ims::visualizeOccupancy(df, one_marker_pub, m_group->getPlanningFrame(), num_paths++);
+    ros::Duration(0.1).sleep();
+    return true;
+
 }
 
 
@@ -289,7 +322,7 @@ void ZeroTimePlanner::InitMoveitOMPL() {
     m_group = std::make_unique<moveit::planning_interface::MoveGroupInterface>(arm_name);
     ROS_INFO("Planning path with OMPL");
     m_group->setPlanningTime(5.0);
-    m_group->setPlannerId("RRTConnect");
+    m_group->setPlannerId("BiTRRT");
 }
 
 void ZeroTimePlanner::InitwAstarIMS() {
@@ -340,6 +373,7 @@ bool ZeroTimePlanner::PlanPathFromStartToAttractorOMPL(const stateType &attracto
         path[i] = positions;
     }
     spinner.stop();
+
     return true;
 }
 
@@ -430,6 +464,89 @@ bool ZeroTimePlanner::plan(std::vector<stateType> &path) {
         }
     }
 }
+
+bool ZeroTimePlanner::GetPathFromPreGraspToGrasp(const stateType &pre_grasp, robot_state::RobotStatePtr &robot_state,
+                                                 const stateType &grasp, std::vector<stateType> &path) {
+    // Assuming that the pre_grasp and grasp are (x, y, z, r, p, y)
+    // initial state (configuration space)
+    std::vector<double> theta0;
+    Eigen::VectorXd grasp_vec(6);
+    Eigen::VectorXd pre_grasp_vec(6);
+    for (size_t i = 0; i < 6; ++i) {
+        grasp_vec[i] = grasp[i];
+        pre_grasp_vec[i] = pre_grasp[i];
+    }
+    pre_grasp_vec[2] += 0.2;
+
+
+    robot_state->copyJointGroupPositions(arm_name, theta0);
+    path.push_back(theta0);
+    // get the Jacobian
+    Eigen::MatrixXd J;
+    auto joint_model_group = robot_state->getJointModelGroup(arm_name);
+    robot_state->getJacobian(joint_model_group, robot_state->getLinkModel(joint_model_group->getLinkModelNames().back()),
+                             Eigen::Vector3d(0, 0, 0), J);
+    // get the Jacobian pseudo inverse
+
+//    Eigen::MatrixXd J_pinv;
+//    Eigen::JacobiSVD<Eigen::MatrixXd> svd(J, Eigen::ComputeThinU | Eigen::ComputeThinV);
+//    double tolerance = std::max(J.cols(), J.rows()) * svd.singularValues().array().abs().maxCoeff() * std::numeric_limits<double>::epsilon();
+//    J_pinv = svd.matrixV() * Eigen::MatrixXd(svd.singularValues().array().abs().inverse().matrix().asDiagonal()) * svd.matrixU().transpose();
+
+    double h = 1 / 10.0;
+    auto theta = theta0;
+    auto curr_grasp_vec = pre_grasp_vec;
+    Eigen::MatrixXd J_inv;
+    for (int i{0} ; i < 10; i++){
+        J_inv = J.transpose() * (J * J.transpose()).inverse();
+        // RK(4)
+        auto k1 = h * (J_inv * (grasp_vec - pre_grasp_vec));
+        auto k2 = h * (J_inv * (grasp_vec - pre_grasp_vec + k1 / 2.0));
+        auto k3 = h * (J_inv * (grasp_vec - pre_grasp_vec + k2 / 2.0));
+        auto k4 = h * (J_inv * (grasp_vec - pre_grasp_vec + k3));
+        auto del_theta = (k1 + 2 * k2 + 2 * k3 + k4) / 6.0;
+        for (size_t j = 0; j < 6; ++j) {
+            theta[j] += del_theta[j];
+        }
+        path.push_back(theta);
+        // update the robot state
+        robot_state->setJointGroupPositions(arm_name, theta);
+        robot_state->update();
+        // check if the new state is in collision and out of bounds
+        if (!robot_state->satisfiesBounds(joint_model_group)) {
+            ROS_WARN("Out of bounds");
+        }
+        // check if the new state is in collision
+        collision_detection::CollisionRequest collision_request;
+        collision_detection::CollisionResult collision_result;
+        collision_request.group_name = arm_name;
+        collision_result.clear();
+//        robot_state->setFromDiffIK(robot_state->getJointModelGroup(arm_name), J_inv * (grasp_vec - curr_grasp_vec));
+
+        // update the current grasp vector using the current robot state FK
+//        auto curr_pose = robot_state->getGlobalLinkTransform(robot_state->getLinkModel(joint_model_group->getLinkModelNames().back()));
+//        curr_grasp_vec[0] = curr_pose.translation()[0]; curr_grasp_vec[1] = curr_pose.translation()[1]; curr_grasp_vec[2] = curr_pose.translation()[2];
+//        auto euler = curr_pose.rotation().eulerAngles(2, 1, 0);
+//        curr_grasp_vec[3] = euler[0]; curr_grasp_vec[4] = euler[1]; curr_grasp_vec[5] = euler[2];
+//        ims::normalize_euler_zyx(curr_grasp_vec[5], curr_grasp_vec[4], curr_grasp_vec[3]);
+        // update the Jacobian
+        robot_state->getJacobian(joint_model_group, robot_state->getLinkModel(joint_model_group->getLinkModelNames().back()),
+                                 Eigen::Vector3d(0, 0, 0), J);
+    }
+    // print path int degrees
+    std::cout << "Path in degrees" << std::endl;
+    for (auto & i : path) {
+        for (size_t j = 0; j < 6; ++j) {
+            i[j] = i[j] * 180.0 / M_PI;
+            std::cout << i[j] << " ";
+        }
+        std::cout << std::endl;
+    }
+
+    return true;
+}
+
+
 
 
 

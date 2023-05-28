@@ -38,7 +38,6 @@
 #include <ctmp/planner_zero.hpp>
 #include <planners/wAStar.hpp>
 
-
 // search includes
 #include <common/types.hpp>
 #include <common/state.hpp>
@@ -68,17 +67,34 @@ public:
             const stateType& full_start_state,
             const stateType& goal);
 
-//    void setStartAndGoal(
-//        const RobotState& start_state,
-//        const GoalConstraint& goal);
-
     void setStartAndGoal(
             const stateType& start_state,
             const stateType& goal);
 
+    /// @brief Get a path from pre-grasp to grasp using Runge-Kutta integration (RK4).
+    /// @param pre_grasp The pre-grasp state.
+    /// @param robot_state The robot state, which is the initial condition (start angle) and has access to the Jacobian.
+    /// @param grasp The grasp state. (TODO: Maybe call it differently?) diff vector?
+    /// @param path The path from pre-grasp to grasp.
+    /// @return True if a path was found, false otherwise.
+    bool GetPathFromPreGraspToGrasp(const stateType & pre_grasp,
+                                    robot_state::RobotStatePtr & robot_state,
+                                    const stateType & grasp,
+                                    std::vector<stateType>& path);
+
     /// @brief Pre-process the goal region according to the algorithm presented in the paper.
     /// @param full_start_state The start state.
     void PreProcess(const stateType& full_start_state);
+
+    /// @brief Plan alternative paths from the start state to the goal region after adding the current path occupancy
+    /// to the obstacles.
+    /// @param attractor The attractor state.
+    /// @param current_path The current path from the start state to the attractor.
+    /// @param new_paths The new paths from the start state to the attractor.
+    /// @return True if a paths were found, false otherwise.
+    bool PlanAlternativePaths(const stateType & attractor,
+                              const std::vector<stateType>& current_path,
+                              std::vector<std::vector<stateType>>& new_paths);
 
     /// @brief For a specific query of end-effector pose, looks for a feasible path.
     void Query(std::vector<ims::state*>& path);
@@ -108,6 +124,7 @@ private:
     /// @return True if a path was found, false otherwise.
     bool PlanPathFromStartToAttractorIMS(const stateType & attractor, std::vector<stateType >& path);
 
+    ros::NodeHandle nh;
     ros::NodeHandle m_nh;
     std::string m_pp_planner;
     bool m_query_mode{};
