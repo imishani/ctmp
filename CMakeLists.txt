@@ -187,6 +187,7 @@ add_executable(${PROJECT_NAME}_demo
         src/zero_time_planner.cpp
         src/planner_zero.cpp)
 
+add_executable(${PROJECT_NAME}_balls src/hyperballs_hypothesis.cpp)
 
 #add_executable(${PROJECT_NAME}_node2 src/dijkstra_zero.cpp)
 #add_executable(${PROJECT_NAME}_node3 src/zero_time_planner.cpp)
@@ -224,6 +225,13 @@ target_link_libraries(${PROJECT_NAME}_node_client
         )
 
 target_link_libraries(${PROJECT_NAME}_demo
+        ${catkin_LIBRARIES}
+        ${eigen_LIBRARIES}
+        ${Boost_LIBRARIES}
+        /usr/local/lib/${search_LIBRARIES}
+        )
+
+target_link_libraries(${PROJECT_NAME}_balls
         ${catkin_LIBRARIES}
         ${eigen_LIBRARIES}
         ${Boost_LIBRARIES}

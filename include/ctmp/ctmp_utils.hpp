@@ -126,7 +126,6 @@ namespace ims {
 
         m.getRPY(result[3], result[4], result[5]);
     }
-
 }
 
 
@@ -139,7 +138,9 @@ struct region
     double radius;
     stateType state; // workspace state
     std::vector<stateType> path;
-    std::vector<stateType> path2;
+    std::vector<stateType> path2;   // TODO: Do I want this here?
+    // Goal to goal paths
+    std::vector<std::vector<stateType>> paths;
 
     template <typename Archive>
     void serialize(Archive& ar, const unsigned int version)
@@ -149,6 +150,7 @@ struct region
         ar & state;
         ar & path;
         ar & path2;
+        ar & paths;
     }
 };
 

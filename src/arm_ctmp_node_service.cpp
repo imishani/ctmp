@@ -172,7 +172,6 @@ public:
         auto& scene_interface = scene_interfaces[robot_idx];
         auto& action_space = action_spaces[robot_idx];
 
-
         ros::param::set(robot + "/pick", true);
 
         ROS_INFO("Initiated action space");

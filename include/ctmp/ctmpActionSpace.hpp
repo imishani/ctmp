@@ -405,7 +405,7 @@ namespace ims{
                 grasp_vec[i] = grasp_pose[i];
                 pre_grasp_vec[i] = pregrasp_pose[i];
             }
-            pre_grasp_vec[2] += 0.2;
+            pre_grasp_vec[2] += 0.05;
             std::vector<stateType> path;
             robot_state->copyJointGroupPositions(getPlanningGroupName(), theta0);
             path.push_back(theta0);
